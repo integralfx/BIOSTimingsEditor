@@ -12,6 +12,7 @@ import java.util.Map;
 
 public class TimingsEditor
 {
+    /*
     public static void main(String[] args)
     {
         final String bios_name = "Hawaii.rom";
@@ -19,6 +20,7 @@ public class TimingsEditor
         TimingsEditor te = new TimingsEditor(bios_name);
         te.fix_checksum();
     }
+    */
 
     private static void print_timings(ATOM_VRAM_TIMING_ENTRY e)
     {
