@@ -33,11 +33,10 @@ public class TimingsEditor
         try
         {
             bios_bytes = Files.readAllBytes(path);
-
-            get_timings();
         }
-        catch(IOException e)
+        catch(Exception e)
         {
+            System.err.println("exception caught: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -52,8 +51,10 @@ public class TimingsEditor
         // [AB6E, AB81]
         //ATOM_VRAM_INFO vram_info = new ATOM_VRAM_INFO(vram_info_bytes);
 
-        // TODO: this doesn't work with pre-polaris bioses
-        // [AB82, ABC1], [ABC2, AC01], [AC02, AC41]
+        /* 
+         * this doesn't work with pre-polaris bioses
+         * [AB82, ABC1], [ABC2, AC01], [AC02, AC41]
+         */
         /*
         ArrayList<ATOM_VRAM_ENTRY> vram_entries = new ArrayList<>();
         int offset = VRAM_Info_offset + ATOM_VRAM_INFO.size;
@@ -69,16 +70,12 @@ public class TimingsEditor
         }
         */
 
-        /*
-         * find the 400MHz strap
-         * maybe replace with KMP algorithm
-         */
+        // find the 400MHz strap
         byte[] needle = { (byte)0x40, (byte)0x9C, (byte)0x00, (byte)0x01 };
         VRAM_Timings_offset = find_bytes(bios_bytes, needle);
         if(VRAM_Timings_offset == -1)
         {
             System.err.println("failed to find 400MHz strap in BIOS");
-
             return null;
         }
 
@@ -99,30 +96,13 @@ public class TimingsEditor
             offset += ATOM_VRAM_TIMING_ENTRY.size;
         }
 
-        /*
-        for(Byte index : vram_timing_entries.keySet())
-        {
-            System.out.println(String.format("=== Index: %d ===", index));
-            for(ATOM_VRAM_TIMING_ENTRY timing : vram_timing_entries.get(index))
-            {
-                System.out.println(timing.ulClkRange);
-
-                for(byte b : timing.ucLatency)
-                    System.out.print(String.format("0x%02X ", b));
-
-                System.out.print('\n');
-            }
-
-            System.out.print('\n');
-        }
-        */
-
         return vram_timing_entries;
     }
 
     /*
-     * overwrites bios_bytes with the contents of timings
-     * returns false, if the strap in timings isn't found
+     * finds timings.ulClkRange and timings.ucIndex in bios_bytes and
+     * overwrites ucLatency in bios_bytes with timings.ucLatency
+     * returns false, if it isn't found
      * otherwise, returns true
      */
     public boolean set_timings(ATOM_VRAM_TIMING_ENTRY timings)
@@ -150,29 +130,19 @@ public class TimingsEditor
             (byte)((timings.ulClkRange >> 16) & 0xFF),
             timings.ucIndex
         };
-        for(int i = VRAM_Timings_offset; i < bios_bytes.length ; i++)
+        int offset = find_bytes(bios_bytes, needle);
+        if(offset == -1)
         {
-            found = true;
-            for(int j = 0; j < needle.length; j++)
-            {
-                if(bios_bytes[i + j] != needle[j])
-                {
-                    found = false; break;
-                }
-            }
-
-            // overwrite bios_bytes
-            if(found)
-            {
-                System.arraycopy(timings.ucLatency, 0, bios_bytes, i + needle.length, timings.ucLatency.length);
-                return true;
-            }
+            System.err.println(String.format("failed to find the needle for index %d %dkHz", 
+                timings.ucIndex, timings.ulClkRange));
+            return false;
         }
-
-        System.err.println(String.format("failed to find the needle for index %d %dkHz", 
-            timings.ucIndex, timings.ulClkRange));
-
-        return false;
+        else
+        {
+            // overwrite timings
+            System.arraycopy(timings.ucLatency, 0, bios_bytes, offset + needle.length, timings.ucLatency.length);
+            return true;
+        }
     }
 
     /*
@@ -229,6 +199,12 @@ public class TimingsEditor
                Byte.toUnsignedLong(bytes[offset]);
     }
 
+    /*
+     * finds the first occurrence of needle in haystack
+     * returns the index to the start of needle in haystack
+     * returns -1 if not found
+     * maybe replace with KMP algorithm?
+     */
     private int find_bytes(byte[] haystack, byte[] needle)
     {
         if(haystack == null || needle == null)
