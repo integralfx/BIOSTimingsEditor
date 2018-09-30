@@ -1,6 +1,8 @@
 # BIOSTimingsEditor
 Java Swing GUI for editing AMD GPU VRAM timings
 
+![Screenshot](https://puu.sh/BDjpP/f2a1bc0313.png)
+
 ## Purpose
 This program is made for pre-Polaris GPUs which didn't have a GUI for editing VRAM timings and would have to resort to using a hex editor.
 
