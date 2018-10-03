@@ -12,15 +12,13 @@ import java.util.Map;
 
 public class TimingsEditor
 {
-    /*
     public static void main(String[] args)
     {
-        final String bios_name = "Hawaii.rom";
+        final String bios_name = "Sapphire.R9380X.4096.151101.rom";
 
         TimingsEditor te = new TimingsEditor(bios_name);
-        te.fix_checksum();
+        te.get_timings();
     }
-    */
 
     private static void print_timings(ATOM_VRAM_TIMING_ENTRY e)
     {
@@ -45,46 +43,47 @@ public class TimingsEditor
 
     public ArrayList<ATOM_VRAM_TIMING_ENTRY> get_timings()
     {
-        /*
-        byte[] vram_info_bytes = new byte[ATOM_VRAM_INFO.size];
-        System.arraycopy(bios_bytes, VRAM_Info_offset, vram_info_bytes, 0, vram_info_bytes.length);
-        */
-
-        // [AB6E, AB81]
-        //ATOM_VRAM_INFO vram_info = new ATOM_VRAM_INFO(vram_info_bytes);
-
-        /* 
-         * this doesn't work with pre-polaris bioses
-         * [AB82, ABC1], [ABC2, AC01], [AC02, AC41]
-         */
-        /*
-        ArrayList<ATOM_VRAM_ENTRY> vram_entries = new ArrayList<>();
-        int offset = VRAM_Info_offset + ATOM_VRAM_INFO.size;
-        for(int i = 0; i < vram_info.ucNumOfVRAMModule; i++)
+        // find rom header
+        byte[] rom_header_needle = { (byte)0x24, (byte)0x00, (byte)0x01, (byte)0x01 };
+        int rom_header_offset = find_bytes(bios_bytes, rom_header_needle);
+        if(rom_header_offset == -1)
         {
-            byte[] vram_entry_bytes = new byte[ATOM_VRAM_ENTRY.size];
-            System.arraycopy(bios_bytes, offset, vram_entry_bytes, 0, ATOM_VRAM_ENTRY.size);
-
-            ATOM_VRAM_ENTRY vram_entry = new ATOM_VRAM_ENTRY(vram_entry_bytes);
-            vram_entries.add(vram_entry);
-
-            offset += vram_entry.usModuleSize;
+            System.err.println("failed to find ATOM_ROM_HEADER");
+            return null;
         }
-        */
+        byte[] rom_header_bytes = new byte[ATOM_ROM_HEADER.size];
+        System.arraycopy(bios_bytes, rom_header_offset, rom_header_bytes, 0, ATOM_ROM_HEADER.size);
+        ATOM_ROM_HEADER rom_header = new ATOM_ROM_HEADER(rom_header_bytes);
+
+        // get master data table
+        byte[] master_data_table_bytes = new byte[ATOM_MASTER_DATA_TABLE.size];
+        System.arraycopy(bios_bytes, rom_header.usMasterDataTableOffset, master_data_table_bytes, 0, ATOM_MASTER_DATA_TABLE.size);                                                            
+        ATOM_MASTER_DATA_TABLE master_data_table = new ATOM_MASTER_DATA_TABLE(master_data_table_bytes);
+
+        // get vram info
+        byte[] vram_info_bytes = new byte[ATOM_VRAM_INFO.size];
+        System.arraycopy(bios_bytes, master_data_table.VRAM_Info, vram_info_bytes, 0, ATOM_VRAM_INFO.size);                                                    
+        ATOM_VRAM_INFO vram_info = new ATOM_VRAM_INFO(vram_info_bytes);
+        byte[] vram_info_full_bytes = new byte[vram_info.sHeader.usStructureSize];
+        System.arraycopy(bios_bytes, master_data_table.VRAM_Info, vram_info_full_bytes, 0, vram_info.sHeader.usStructureSize);
 
         // find the 400MHz strap
-        byte[] needle = { (byte)0x40, (byte)0x9C, (byte)0x00, (byte)0x01 };
-        VRAM_Timings_offset = find_bytes(bios_bytes, needle);
+        byte[] needle = { (byte)0x40, (byte)0x9C, (byte)0x00 };
+        VRAM_Timings_offset = find_bytes(vram_info_full_bytes, needle);
         if(VRAM_Timings_offset == -1)
         {
             System.err.println("failed to find 400MHz strap in BIOS");
             return null;
         }
+        /* 
+         * + master_data_table.VRAM_Info, as find_bytes will return the offset relative to vram_info_full_bytes
+         * but VRAM_Timings_offset is absolute
+         */
+        VRAM_Timings_offset += master_data_table.VRAM_Info;
 
-        int offset = VRAM_Timings_offset;
         ArrayList<ATOM_VRAM_TIMING_ENTRY> vram_timing_entries = new ArrayList<>();
         // unknown length, 32 should be more than enough
-        for(int i = 0; i < 32; i++)
+        for(int i = 0, offset = VRAM_Timings_offset; i < 32; i++, offset += ATOM_VRAM_TIMING_ENTRY.size)
         {
             byte[] vram_timing_entry_bytes = new byte[ATOM_VRAM_TIMING_ENTRY.size];
             System.arraycopy(bios_bytes, offset, vram_timing_entry_bytes, 0, ATOM_VRAM_TIMING_ENTRY.size);
@@ -94,8 +93,6 @@ public class TimingsEditor
             if(vram_timing_entry.ulClkRange == 0) break;
 
             vram_timing_entries.add(vram_timing_entry);
-
-            offset += ATOM_VRAM_TIMING_ENTRY.size;
         }
 
         return vram_timing_entries;
@@ -223,7 +220,7 @@ public class TimingsEditor
             boolean found = true;
             for(int j = 0; j < needle.length; j++)
             {
-                if(bios_bytes[i + j] != needle[j])
+                if(haystack[i + j] != needle[j])
                 {
                     found = false; break;
                 }
@@ -233,6 +230,145 @@ public class TimingsEditor
         }
 
         return -1;
+    }
+
+    class ATOM_ROM_HEADER
+    {
+        public static final int size = 36, ATOM_BIOS_SIGNATURE = 0x4D4F5441;
+
+        public ATOM_COMMON_TABLE_HEADER sHeader;
+        public int ulFirmwareSignature;             // 4 bytes
+        // vvv 2 bytes vvv
+        public int usBIOSRuntimeSegmentAddress;
+        public int usProtectedModeInfoOffset;
+        public int usConfigFilenameOffset;
+        public int usCRCBlockOffset;
+        public int usBIOSBootupMessageOffset;
+        public int usInt10Offset;
+        public int usPCIBusDevInitiCode;
+        public int usIOBaseAddress;
+        public int usSubsystemVendorID;
+        public int usSubsystemID;
+        public int usPCIInfoOffset;
+        public int usMasterCommandTableOffset;
+        public int usMasterDataTableOffset;
+        // ^^^ 2 bytes ^^^
+        public short ucExtendedFunctionCode;
+        public short ucReserved;
+
+        public ATOM_ROM_HEADER(byte[] bytes) throws IllegalArgumentException
+        {
+            if(bytes.length != size)
+                throw new IllegalArgumentException(String.format("ATOM_ROM_HEADER: expected %d bytes, got %d bytes", size, bytes.length));
+
+            sHeader = new ATOM_COMMON_TABLE_HEADER(Arrays.copyOf(bytes, ATOM_COMMON_TABLE_HEADER.size));
+            int i = ATOM_COMMON_TABLE_HEADER.size;
+            ulFirmwareSignature = (int)bytes_to_uint32(bytes, i); i += 4;
+            if(ulFirmwareSignature != ATOM_BIOS_SIGNATURE)
+                throw new IllegalArgumentException("invalid BIOS");
+            usBIOSRuntimeSegmentAddress = bytes_to_uint16(bytes, i); i += 2;
+            usProtectedModeInfoOffset = bytes_to_uint16(bytes, i); i += 2;
+            usConfigFilenameOffset = bytes_to_uint16(bytes, i); i += 2;
+            usCRCBlockOffset = bytes_to_uint16(bytes, i); i += 2;
+            usBIOSBootupMessageOffset = bytes_to_uint16(bytes, i); i += 2;
+            usInt10Offset = bytes_to_uint16(bytes, i); i += 2;
+            usPCIBusDevInitiCode = bytes_to_uint16(bytes, i); i += 2;
+            usIOBaseAddress = bytes_to_uint16(bytes, i); i += 2;
+            usSubsystemVendorID = bytes_to_uint16(bytes, i); i += 2;
+            usSubsystemID = bytes_to_uint16(bytes, i); i += 2;
+            usPCIInfoOffset = bytes_to_uint16(bytes, i); i += 2;
+            usMasterCommandTableOffset = bytes_to_uint16(bytes, i); i += 2;
+            usMasterDataTableOffset = bytes_to_uint16(bytes, i); i += 2;
+            ucExtendedFunctionCode = bytes[i++];
+            ucReserved = bytes[i++];
+        }
+    }
+
+    class ATOM_MASTER_DATA_TABLE
+    {
+        public static final int size = 74;
+
+        public ATOM_COMMON_TABLE_HEADER sHeader;
+        // vvv 2 bytes vvv
+        public int UtilityPipeLine;
+        public int MultimediaCapabilityInfo;
+        public int MultimedaConfigInfo;
+        public int StandardVESATiming;
+        public int FirmwareInfo;
+        public int PaletteData;
+        public int LCD_Info;
+        public int DIGTransmitterInfo;
+        public int AnalogTV_Info;
+        public int SupportedDevicesInfo;
+        public int GPIO_I2C_Info;
+        public int VRAMUsageByFirmware;
+        public int GPIO_Pin_LUT;
+        public int VESAToInternalModeLUT;
+        public int ComponentVideoInfo;
+        public int PowerPlayInfo;
+        public int GPUVirtualizationInfo;
+        public int SaveRestoreInfo;
+        public int PPLL_SS_Info;
+        public int OEMInfo;
+        public int XTMDS_Info;
+        public int MclkSS_Info;
+        public int Object_Header;
+        public int IndirectIOAccess;
+        public int MC_InitParameter;
+        public int ASIC_VDDC_Info;
+        public int ASIC_InternalSS_Info;
+        public int TV_VideoMode;
+        public int VRAM_Info;
+        public int MemoryTrainingInfo;
+        public int IntegratedSystemInfo;
+        public int ASIC_ProfilingInfo;
+        public int VoltageObjectInfo;
+        public int PowerSourceInfo;
+        public int ServiceInfo;
+
+        public ATOM_MASTER_DATA_TABLE(byte[] bytes)
+        {
+            if(bytes.length != size) 
+                throw new IllegalArgumentException(String.format("ATOM_MASTER_DATA_TABLE: expected %d bytes, got %d bytes", size, bytes.length));
+
+            sHeader = new ATOM_COMMON_TABLE_HEADER(Arrays.copyOf(bytes, ATOM_COMMON_TABLE_HEADER.size));
+            int i = ATOM_COMMON_TABLE_HEADER.size;
+            UtilityPipeLine = bytes_to_uint16(bytes, i); i += 2;
+            MultimediaCapabilityInfo = bytes_to_uint16(bytes, i); i += 2;
+            MultimedaConfigInfo = bytes_to_uint16(bytes, i); i += 2;
+            StandardVESATiming = bytes_to_uint16(bytes, i); i += 2;
+            FirmwareInfo = bytes_to_uint16(bytes, i); i += 2;
+            PaletteData = bytes_to_uint16(bytes, i); i += 2;
+            LCD_Info = bytes_to_uint16(bytes, i); i += 2;
+            DIGTransmitterInfo = bytes_to_uint16(bytes, i); i += 2;
+            AnalogTV_Info = bytes_to_uint16(bytes, i); i += 2;
+            SupportedDevicesInfo = bytes_to_uint16(bytes, i); i += 2;
+            GPIO_I2C_Info = bytes_to_uint16(bytes, i); i += 2;
+            VRAMUsageByFirmware = bytes_to_uint16(bytes, i); i += 2;
+            GPIO_Pin_LUT = bytes_to_uint16(bytes, i); i += 2;
+            VESAToInternalModeLUT = bytes_to_uint16(bytes, i); i += 2;
+            ComponentVideoInfo = bytes_to_uint16(bytes, i); i += 2;
+            PowerPlayInfo = bytes_to_uint16(bytes, i); i += 2;
+            GPUVirtualizationInfo = bytes_to_uint16(bytes, i); i += 2;
+            SaveRestoreInfo = bytes_to_uint16(bytes, i); i += 2;
+            PPLL_SS_Info = bytes_to_uint16(bytes, i); i += 2;
+            OEMInfo = bytes_to_uint16(bytes, i); i += 2;
+            XTMDS_Info = bytes_to_uint16(bytes, i); i += 2;
+            XTMDS_Info = bytes_to_uint16(bytes, i); i += 2;
+            MclkSS_Info = bytes_to_uint16(bytes, i); i += 2;
+            Object_Header = bytes_to_uint16(bytes, i); i += 2;
+            IndirectIOAccess = bytes_to_uint16(bytes, i); i += 2;
+            MC_InitParameter = bytes_to_uint16(bytes, i); i += 2;
+            ASIC_VDDC_Info = bytes_to_uint16(bytes, i); i += 2;
+            TV_VideoMode = bytes_to_uint16(bytes, i); i += 2;
+            VRAM_Info = bytes_to_uint16(bytes, i); i += 2;
+            MemoryTrainingInfo = bytes_to_uint16(bytes, i); i += 2;
+            IntegratedSystemInfo = bytes_to_uint16(bytes, i); i += 2;
+            ASIC_ProfilingInfo = bytes_to_uint16(bytes, i); i += 2;
+            VoltageObjectInfo = bytes_to_uint16(bytes, i); i += 2;
+            PowerSourceInfo = bytes_to_uint16(bytes, i); i += 2;
+            ServiceInfo = bytes_to_uint16(bytes, i); i += 2;
+        }
     }
 
     class ATOM_COMMON_TABLE_HEADER

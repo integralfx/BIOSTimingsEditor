@@ -29,6 +29,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
@@ -98,7 +99,7 @@ public class TimingsEditorGUI extends JFrame
 						timings = timings_editor.get_timings();
 
 						update_indices_cbox();
-						update_timings_text((byte)1);
+						update_timings_text(timings.get(0).ucIndex);
 					}
 				}
 				else if(e.getSource() == menu_item_saveas)
@@ -195,6 +196,8 @@ public class TimingsEditorGUI extends JFrame
 				update_timings_text(selected);
 			}
 		});
+
+		cbox_indices.setSelectedIndex(0);
 	}
 
 	private void add_timings_panel()
@@ -291,8 +294,6 @@ public class TimingsEditorGUI extends JFrame
 			panel.add(panel_row);
 		}
 
-		update_timings_text((byte)1);
-
 		main_panel.add(panel);
 	}
 
@@ -319,18 +320,32 @@ public class TimingsEditorGUI extends JFrame
 			// fill in timings
 			if(found)
 			{
-				String str = "";
+				StringBuilder sb = new StringBuilder();
 				for(byte b : curr_timings.ucLatency)
-					str += String.format("%02X", b);
-
-				freq_text.get(f).setText(str);
-				freq_text.get(f).setCaretPosition(0);
-				freq_text.get(f).setEnabled(true);
+					sb.append(String.format("%02X", b));
+				
+				SwingUtilities.invokeLater(new Runnable()
+				{
+					@Override
+					public void run()
+					{
+						freq_text.get(f).setText(sb.toString());
+						freq_text.get(f).setCaretPosition(0);
+						freq_text.get(f).setEnabled(true);
+					}
+				});
 			}
 			else 
 			{
-				freq_text.get(f).setText("No timings for this frequency");
-				freq_text.get(f).setEnabled(false);
+				SwingUtilities.invokeLater(new Runnable()
+				{
+					@Override
+					public void run()
+					{
+						freq_text.get(f).setText("No timings for this frequency");
+						freq_text.get(f).setEnabled(false);
+					}
+				});
 			}
 		}
 	}
