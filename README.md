@@ -13,4 +13,5 @@ This program is made for pre-Polaris GPUs which didn't have a GUI for editing VR
 * Possibly decode the timings, be able to edit each timing and re-encode them
 
 ## Credits
+* [caa82437 - PolarisBiosEditor](https://github.com/caa82437/PolarisBiosEditor)
 * [OneB1t - HawaiiBiosReader](https://github.com/OneB1t/HawaiiBiosReader)
