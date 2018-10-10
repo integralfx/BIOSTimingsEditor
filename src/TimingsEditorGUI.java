@@ -324,28 +324,14 @@ public class TimingsEditorGUI extends JFrame
 				for(byte b : curr_timings.ucLatency)
 					sb.append(String.format("%02X", b));
 				
-				SwingUtilities.invokeLater(new Runnable()
-				{
-					@Override
-					public void run()
-					{
-						freq_text.get(f).setText(sb.toString());
-						freq_text.get(f).setCaretPosition(0);
-						freq_text.get(f).setEnabled(true);
-					}
-				});
+				freq_text.get(f).setText(sb.toString());
+				freq_text.get(f).setCaretPosition(0);
+				freq_text.get(f).setEnabled(true);
 			}
 			else 
 			{
-				SwingUtilities.invokeLater(new Runnable()
-				{
-					@Override
-					public void run()
-					{
-						freq_text.get(f).setText("No timings for this frequency");
-						freq_text.get(f).setEnabled(false);
-					}
-				});
+				freq_text.get(f).setText("No timings for this frequency");
+				freq_text.get(f).setEnabled(false);
 			}
 		}
 	}
