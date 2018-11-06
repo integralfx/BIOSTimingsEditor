@@ -1,3 +1,5 @@
+import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
@@ -14,7 +16,9 @@ import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
+import javax.swing.ComboBoxModel;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -53,13 +57,11 @@ public class TimingsEditorGUI extends JFrame
 		BoxLayout layout = new BoxLayout(main_panel, BoxLayout.Y_AXIS);
 		main_panel.setLayout(layout);
 
-		main_panel.add(lbl_file);
+		JPanel p = new JPanel();
+		p.add(lbl_file);
+		main_panel.add(p);
 
-		add_indices_panel();
-
-		add_timings_panel();
-
-		pack();
+		setSize(300, 200);
 		setResizable(false);
 		setVisible(true);
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
@@ -98,8 +100,28 @@ public class TimingsEditorGUI extends JFrame
 						timings_editor = new TimingsEditor(file.getAbsolutePath());
 						timings = timings_editor.get_timings();
 
-						update_indices_cbox();
-						update_timings_text(timings.get(0).ucIndex);
+						SwingUtilities.invokeLater(new Runnable()
+						{
+							@Override
+							public void run()
+							{
+								if(panel_timings != null)
+								{
+									main_panel.remove(panel_timings);
+									panel_timings = null;
+								}
+
+								if(panel_indices == null)
+									add_indices_panel();
+								
+								add_timings_panel(timings.get(0).ucIndex);
+								revalidate();
+								repaint();
+								pack();
+
+								update_indices_cbox();
+							}
+						});
 					}
 				}
 				else if(e.getSource() == menu_item_saveas)
@@ -158,15 +180,15 @@ public class TimingsEditorGUI extends JFrame
 
 	private void add_indices_panel()
 	{
-		JPanel panel = new JPanel(new FlowLayout());
+		panel_indices = new JPanel();
 
 		JLabel lbl_indices = new JLabel("RAM IC Index: ");
-		panel.add(lbl_indices);
+		panel_indices.add(lbl_indices);
 
-		cbox_indices = new JComboBox();
-		panel.add(cbox_indices);
+		cbox_indices = new JComboBox<>();
+		panel_indices.add(cbox_indices);
 
-		main_panel.add(panel);
+		main_panel.add(panel_indices);
 	}
 
 	private void update_indices_cbox()
@@ -184,7 +206,7 @@ public class TimingsEditorGUI extends JFrame
 				indices.add(index);
 		}
 
-		DefaultComboBoxModel model = new DefaultComboBoxModel(indices.toArray(new String[indices.size()]));
+		DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(indices.toArray(new String[indices.size()]));
 		cbox_indices.setModel(model);
 		
 		cbox_indices.addActionListener(new ActionListener()
@@ -193,158 +215,139 @@ public class TimingsEditorGUI extends JFrame
 			public void actionPerformed(ActionEvent e) 
 			{
 				byte selected = (byte)Integer.parseInt(cbox_indices.getSelectedItem().toString());
-				update_timings_text(selected);
+
+				/*
+				 * remove and add as the selected RAM IC may have
+				 * different frequencies compared to the current
+				 */
+				SwingUtilities.invokeLater(new Runnable()
+				{
+					@Override
+					public void run()
+					{
+						if(panel_timings != null)
+						{
+							main_panel.remove(panel_timings);
+							panel_timings = null;
+						}
+						add_timings_panel(selected);
+						revalidate();
+						repaint();
+						pack();
+					}
+				});
 			}
 		});
-
-		cbox_indices.setSelectedIndex(0);
 	}
 
-	private void add_timings_panel()
+	private void add_timings_panel(byte ram_ic_index)
 	{
-		JPanel panel = new JPanel();
-		BoxLayout layout = new BoxLayout(panel, BoxLayout.Y_AXIS);
-		panel.setLayout(layout);
+		panel_timings = new JPanel();
+		BoxLayout layout = new BoxLayout(panel_timings, BoxLayout.Y_AXIS);
+		panel_timings.setLayout(layout);
 
-		for(int f : frequencies)
+		for(TimingsEditor.ATOM_VRAM_TIMING_ENTRY e : timings)
 		{
-			JPanel panel_row = new JPanel(new FlowLayout());
-
-			JLabel lbl_frequency = new JLabel(String.format("%d MHz: ", f));
-			lbl_frequency.setPreferredSize(new Dimension(70, lbl_frequency.getPreferredSize().height));
-			panel_row.add(lbl_frequency);
-
-			JTextArea txt_timings = new JTextArea(1, 20);
-			txt_timings.getDocument().addDocumentListener(new DocumentListener()
+			if(e.ucIndex == ram_ic_index)
 			{
-				@Override
-				public void removeUpdate(DocumentEvent e) 
-				{
-					update(e);
-				}
-			
-				@Override
-				public void insertUpdate(DocumentEvent e) 
-				{
-					update(e);
-				}
-			
-				@Override
-				public void changedUpdate(DocumentEvent e) 
-				{
-		
-				}
-		
-				public void update(DocumentEvent e)
-				{
-					String input = txt_timings.getText();
-		
-					if(input.isEmpty()) return;
-		
-					if(input.matches("^[0-9A-Fa-f]{96}$"))
-					{
-						// find the frequency
-						int curr_freq = 0;
-						for(HashMap.Entry<Integer, JTextArea> entry : freq_text.entrySet())
-						{
-							if(e.getDocument() == entry.getValue().getDocument())
-							{
-								curr_freq = entry.getKey();
-								break;
-							}
-						}
-		
-						byte selected_index = (byte)Integer.parseInt(cbox_indices.getSelectedItem().toString());
-		
-						TimingsEditor.ATOM_VRAM_TIMING_ENTRY new_timings = null;
-						// find the timings
-						for(TimingsEditor.ATOM_VRAM_TIMING_ENTRY t : timings)
-						{
-							if(t.ulClkRange == curr_freq * 100 && t.ucIndex == selected_index)
-							{
-								new_timings = t;
-								break;
-							}
-						}
-		
-						byte[] new_timings_bytes = string_to_bytes(input);
-						System.arraycopy(new_timings_bytes, 0, new_timings.ucLatency, 0, new_timings_bytes.length);
-						timings_editor.set_timings(new_timings);
-					}
-				}
-		
-				private byte[] string_to_bytes(String s)
-				{
-					int len = s.length();
-					byte[] bytes = new byte[len / 2];
-					for(int i = 0; i < len ; i += 2)
-					{
-						bytes[i / 2] = (byte)((Character.digit(s.charAt(i), 16) << 4) +
-												Character.digit(s.charAt(i + 1), 16));
-					}
-		
-					return bytes;
-				}
-			});
-			JScrollPane scroll = new JScrollPane(txt_timings, JScrollPane.VERTICAL_SCROLLBAR_NEVER, 
-												 JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-			panel_row.add(scroll);
-			freq_text.put(f, txt_timings);
+				int freq = e.ulClkRange / 100;	// frequency in MHz
+				JPanel panel_row = new JPanel(new FlowLayout());
 
-			panel.add(panel_row);
-		}
+				JLabel lbl_frequency = new JLabel(String.format("%d MHz: ", freq));
+				set_width(lbl_frequency, 70);
+				panel_row.add(lbl_frequency);
 
-		main_panel.add(panel);
-	}
-
-	private void update_timings_text(byte ram_ic_index)
-	{
-		if(timings == null || timings.isEmpty())
-			return;
-
-		// fill in timings which are found in the bios
-		for(int f : frequencies)
-		{
-			TimingsEditor.ATOM_VRAM_TIMING_ENTRY curr_timings = null;
-			boolean found = false;
-			for(TimingsEditor.ATOM_VRAM_TIMING_ENTRY e : timings)
-			{
-				// ulClkRange is in kHz
-				if(e.ulClkRange == f * 100 && e.ucIndex == ram_ic_index)
-				{
-					curr_timings = e;
-					found = true; break;
-				}
-			}
-
-			// fill in timings
-			if(found)
-			{
+				JTextArea txt_timings = new JTextArea(1, 20);
 				StringBuilder sb = new StringBuilder();
-				for(byte b : curr_timings.ucLatency)
+				for(byte b : e.ucLatency)
 					sb.append(String.format("%02X", b));
+				txt_timings.setText(sb.toString());
+				txt_timings.setCaretPosition(0);
+				txt_timings.getDocument().addDocumentListener(new DocumentListener()
+				{
+					@Override
+					public void removeUpdate(DocumentEvent e) 
+					{
+						changedUpdate(e);
+					}
 				
-				freq_text.get(f).setText(sb.toString());
-				freq_text.get(f).setCaretPosition(0);
-				freq_text.get(f).setEnabled(true);
-			}
-			else 
-			{
-				freq_text.get(f).setText("No timings for this frequency");
-				freq_text.get(f).setEnabled(false);
+					@Override
+					public void insertUpdate(DocumentEvent e) 
+					{
+						changedUpdate(e);
+					}
+				
+					@Override
+					public void changedUpdate(DocumentEvent e) 
+					{
+						String input = txt_timings.getText();
+			
+						if(input.isEmpty()) return;
+			
+						if(input.matches("^[0-9A-Fa-f]{96}$"))
+						{
+							txt_timings.setBackground(Color.WHITE);
+			
+							byte selected_index = (byte)Integer.parseInt(cbox_indices.getSelectedItem().toString());
+			
+							TimingsEditor.ATOM_VRAM_TIMING_ENTRY new_timings = null;
+							// find the timings
+							for(TimingsEditor.ATOM_VRAM_TIMING_ENTRY t : timings)
+							{
+								if(t.ulClkRange == freq * 100 && t.ucIndex == selected_index)
+								{
+									new_timings = t;
+									break;
+								}
+							}
+			
+							// set_timings() uses the ulClkRange and ucIndex as the "key"
+							byte[] new_timings_bytes = string_to_bytes(input);
+							System.arraycopy(new_timings_bytes, 0, new_timings.ucLatency, 0, new_timings_bytes.length);
+							timings_editor.set_timings(new_timings);
+						}
+						else
+						{
+							txt_timings.setBackground(new Color(0xFFFFAFAF));
+						}
+					}
+			
+					private byte[] string_to_bytes(String s)
+					{
+						int len = s.length();
+						byte[] bytes = new byte[len / 2];
+						for(int i = 0; i < len ; i += 2)
+						{
+							bytes[i / 2] = (byte)((Character.digit(s.charAt(i), 16) << 4) +
+													Character.digit(s.charAt(i + 1), 16));
+						}
+			
+						return bytes;
+					}
+				});
+				JScrollPane scroll = new JScrollPane(txt_timings, JScrollPane.VERTICAL_SCROLLBAR_NEVER, 
+													 JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
+				panel_row.add(scroll);
+
+				panel_timings.add(panel_row);
 			}
 		}
+
+		panel_timings.setBorder(BorderFactory.createTitledBorder("Straps"));
+
+		main_panel.add(panel_timings);
+	}
+
+	private void set_width(Component c, int width)
+	{
+		c.setPreferredSize(new Dimension(width, c.getPreferredSize().height));
 	}
 
 	private Container main_panel = getContentPane();
+	private JPanel panel_indices, panel_timings;
 	private JMenuItem menu_item_open, menu_item_saveas;
 	private TimingsEditor timings_editor;
 	private ArrayList<TimingsEditor.ATOM_VRAM_TIMING_ENTRY> timings;
-	// stores the JTextField for each frequency
-	private HashMap<Integer, JTextArea> freq_text = new HashMap<>();
-	private JComboBox cbox_indices = new JComboBox();
+	private JComboBox<String> cbox_indices = new JComboBox<>();
 	private JLabel lbl_file = new JLabel("No BIOS opened");
-
-	// frequencies for strap (in MHz)
-	private static final int[] frequencies = { 400, 800, 900, 1000, 1125, 1250, 1375, 1425, 1500, 1625, 1750 };
 }

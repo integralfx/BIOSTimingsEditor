@@ -498,7 +498,7 @@ public class TimingsEditor
     {
         public static final int size = 0x34;
 
-        public int ulClkRange;  // unsigned int, 3 bytes, units are kHz
+        public int ulClkRange;  // unsigned int, 3 bytes, in 10kHz
         public byte ucIndex;
         public final byte[] ucLatency = new byte[0x30];
 
