@@ -12,6 +12,7 @@ import java.util.Map;
 
 public class TimingsEditor
 {
+    // TODO: handle VRAM_MODULE_V7
     public static void main(String[] args)
     {
         final String bios_name = "Sapphire.R9380X.4096.151101.rom";
@@ -33,6 +34,8 @@ public class TimingsEditor
         try
         {
             bios_bytes = Files.readAllBytes(path);
+            if(!init())
+                throw new Exception("invalid BIOS file");
         }
         catch(Exception e)
         {
@@ -41,7 +44,7 @@ public class TimingsEditor
         }
     }
 
-    public ArrayList<ATOM_VRAM_TIMING_ENTRY> get_timings()
+    private boolean init()
     {
         // find rom header
         byte[] rom_header_needle = { (byte)0x24, (byte)0x00, (byte)0x01, (byte)0x01 };
@@ -49,34 +52,52 @@ public class TimingsEditor
         if(rom_header_offset == -1)
         {
             System.err.println("failed to find ATOM_ROM_HEADER");
-            return null;
+            return false;
         }
         byte[] rom_header_bytes = new byte[ATOM_ROM_HEADER.size];
         System.arraycopy(bios_bytes, rom_header_offset, rom_header_bytes, 0, ATOM_ROM_HEADER.size);
-        ATOM_ROM_HEADER rom_header = new ATOM_ROM_HEADER(rom_header_bytes);
+        rom_header = new ATOM_ROM_HEADER(rom_header_bytes);
 
         // get master data table
         byte[] master_data_table_bytes = new byte[ATOM_MASTER_DATA_TABLE.size];
-        System.arraycopy(bios_bytes, rom_header.usMasterDataTableOffset, master_data_table_bytes, 0, ATOM_MASTER_DATA_TABLE.size);                                                            
-        ATOM_MASTER_DATA_TABLE master_data_table = new ATOM_MASTER_DATA_TABLE(master_data_table_bytes);
+        System.arraycopy(bios_bytes, rom_header.usMasterDataTableOffset, 
+                            master_data_table_bytes, 0, ATOM_MASTER_DATA_TABLE.size);                                                            
+        master_data_table = new ATOM_MASTER_DATA_TABLE(master_data_table_bytes);
 
-        // get vram info
-        byte[] vram_info_bytes = new byte[ATOM_VRAM_INFO.size];
-        System.arraycopy(bios_bytes, master_data_table.VRAM_Info, vram_info_bytes, 0, ATOM_VRAM_INFO.size);                                                    
-        ATOM_VRAM_INFO vram_info = new ATOM_VRAM_INFO(vram_info_bytes);
-        byte[] vram_info_full_bytes = new byte[vram_info.sHeader.usStructureSize];
-        System.arraycopy(bios_bytes, master_data_table.VRAM_Info, vram_info_full_bytes, 0, vram_info.sHeader.usStructureSize);
+        return true;
+    }
+
+    public ArrayList<ATOM_VRAM_TIMING_ENTRY> get_timings()
+    {
+        ATOM_VRAM_INFO vram_info = get_vram_info();
+        // for(ATOM_VRAM_MODULE m : vram_info.sModules)
+        // {
+        //     switch(vram_info.ucVramModuleVer)
+        //     {
+        //     case 7:
+        //         System.out.println(((ATOM_VRAM_MODULE_V7)m).strMemPNString);
+        //         break;
+        //     case 8:
+        //         System.out.println(((ATOM_VRAM_MODULE_V8)m).strMemPNString);
+        //         break;
+        //     }
+        // }
+
+        // all of vram_info structure
+        byte[] vram_info_bytes = new byte[vram_info.sHeader.usStructureSize];
+        System.arraycopy(bios_bytes, master_data_table.VRAM_Info, 
+                         vram_info_bytes, 0, vram_info.sHeader.usStructureSize);
 
         // find the 400MHz strap
         byte[] needle = { (byte)0x40, (byte)0x9C, (byte)0x00 };
-        VRAM_Timings_offset = find_bytes(vram_info_full_bytes, needle);
+        VRAM_Timings_offset = find_bytes(vram_info_bytes, needle);
         if(VRAM_Timings_offset == -1)
         {
             System.err.println("failed to find 400MHz strap in BIOS");
             return null;
         }
         /* 
-         * + master_data_table.VRAM_Info, as find_bytes will return the offset relative to vram_info_full_bytes
+         * + master_data_table.VRAM_Info, as find_bytes will return the offset relative to vram_info_bytes
          * but VRAM_Timings_offset is absolute
          */
         VRAM_Timings_offset += master_data_table.VRAM_Info;
@@ -96,6 +117,20 @@ public class TimingsEditor
         }
 
         return vram_timing_entries;
+    }
+
+    public ATOM_VRAM_INFO get_vram_info()
+    {
+        // get vram info
+        byte[] vram_info_header_bytes = new byte[ATOM_COMMON_TABLE_HEADER.size];
+        System.arraycopy(bios_bytes, master_data_table.VRAM_Info, 
+                            vram_info_header_bytes, 0, ATOM_COMMON_TABLE_HEADER.size);
+        ATOM_COMMON_TABLE_HEADER vram_info_header = new ATOM_COMMON_TABLE_HEADER(vram_info_header_bytes);
+        byte[] vram_info_full_bytes = new byte[vram_info_header.usStructureSize];
+        System.arraycopy(bios_bytes, master_data_table.VRAM_Info, 
+                            vram_info_full_bytes, 0, vram_info_header.usStructureSize);
+        
+        return new ATOM_VRAM_INFO(vram_info_full_bytes);
     }
 
     /*
@@ -259,7 +294,14 @@ public class TimingsEditor
         public ATOM_ROM_HEADER(byte[] bytes) throws IllegalArgumentException
         {
             if(bytes.length != size)
-                throw new IllegalArgumentException(String.format("ATOM_ROM_HEADER: expected %d bytes, got %d bytes", size, bytes.length));
+            {
+                throw new IllegalArgumentException(
+                    String.format(
+                        "ATOM_ROM_HEADER: expected %d bytes, got %d bytes", 
+                        size, bytes.length
+                    )
+                );
+            }
 
             sHeader = new ATOM_COMMON_TABLE_HEADER(Arrays.copyOf(bytes, ATOM_COMMON_TABLE_HEADER.size));
             int i = ATOM_COMMON_TABLE_HEADER.size;
@@ -329,7 +371,14 @@ public class TimingsEditor
         public ATOM_MASTER_DATA_TABLE(byte[] bytes)
         {
             if(bytes.length != size) 
-                throw new IllegalArgumentException(String.format("ATOM_MASTER_DATA_TABLE: expected %d bytes, got %d bytes", size, bytes.length));
+            {
+                throw new IllegalArgumentException(
+                    String.format(
+                        "ATOM_MASTER_DATA_TABLE: expected %d bytes, got %d bytes", 
+                        size, bytes.length
+                    )
+                );
+            }
 
             sHeader = new ATOM_COMMON_TABLE_HEADER(Arrays.copyOf(bytes, ATOM_COMMON_TABLE_HEADER.size));
             int i = ATOM_COMMON_TABLE_HEADER.size;
@@ -381,18 +430,26 @@ public class TimingsEditor
 
         public ATOM_COMMON_TABLE_HEADER(byte[] bytes) throws IllegalArgumentException
         {
-            if(bytes.length != size) 
-                throw new IllegalArgumentException(String.format("ATOM_COMMON_TABLE_HEADER: expected %d bytes, got %d bytes", size, bytes.length));
-            
+            if(bytes.length != size)
+            {
+                throw new IllegalArgumentException(
+                    String.format(
+                        "ATOM_COMMON_TABLE_HEADER: expected %d bytes, got %d bytes", 
+                        size, bytes.length
+                    )
+                );
+            }
+
             usStructureSize = bytes_to_uint16(bytes, 0);
             ucTableFormatRevision = bytes[2];
             ucTableContentRevision = bytes[3];
         }
     }
 
+    // v2.2
     class ATOM_VRAM_INFO
     {
-        public static final int size = ATOM_COMMON_TABLE_HEADER.size + 16;
+        public final int size;
 
         public ATOM_COMMON_TABLE_HEADER sHeader;
         // vvv 2 bytes vvv -> java doesn't have unsigned :/
@@ -407,12 +464,10 @@ public class TimingsEditor
         public byte ucMemoryClkPatchTblVer;
         public byte ucVramModuleVer;
         public byte ucMcPhyTileNum;
+        public ATOM_VRAM_MODULE[] sModules;
 
         public ATOM_VRAM_INFO(byte[] bytes) throws IllegalArgumentException
         {
-            if(bytes.length != size)
-                throw new IllegalArgumentException(String.format("ATOM_VRAM_INFO: expected %d bytes, got %d bytes", size, bytes.length));
-
             sHeader = new ATOM_COMMON_TABLE_HEADER(Arrays.copyOf(bytes, ATOM_COMMON_TABLE_HEADER.size));
             int i = ATOM_COMMON_TABLE_HEADER.size;
             usMemAdjustTblOffset = bytes_to_uint16(bytes, i); i += 2;
@@ -425,9 +480,193 @@ public class TimingsEditor
             ucMemoryClkPatchTblVer = bytes[i++];
             ucVramModuleVer = bytes[i++];
             ucMcPhyTileNum = bytes[i++];
+            sModules = new ATOM_VRAM_MODULE[ucNumOfVRAMModule];
+            int total = 0;
+            for(int j = 0; j < ucNumOfVRAMModule; j++)
+            {
+                ATOM_VRAM_MODULE_HEADER header = new ATOM_VRAM_MODULE_HEADER(
+                    Arrays.copyOfRange(bytes, i, i + 6)
+                );
+
+                switch(ucVramModuleVer)
+                {
+                case 7:
+                    sModules[j] = new ATOM_VRAM_MODULE_V7(Arrays.copyOfRange(bytes, i, i + header.usModuleSize));
+                    break;
+                case 8:
+                    sModules[j] = new ATOM_VRAM_MODULE_V8(Arrays.copyOfRange(bytes, i, i + header.usModuleSize));
+                    break;
+                default:
+                    throw new IllegalArgumentException("ATOM_VRAM_INFO: unknown module version: " + ucVramModuleVer);
+                }
+                
+                i += header.usModuleSize;
+                total += header.usModuleSize;
+            }
+            size = ATOM_COMMON_TABLE_HEADER.size + 16 + total;
+        }
+    }
+    
+    // v8
+    class ATOM_VRAM_MODULE_HEADER
+    {
+        public static final int size = 6;
+
+        public long ulChannelMapCfg;
+        public int usModuleSize;
+
+        public ATOM_VRAM_MODULE_HEADER(byte[] bytes) throws IllegalArgumentException
+        {
+            if(bytes.length != size)
+            {
+                throw new IllegalArgumentException(
+                    String.format(
+                        "ATOM_VRAM_MODULE_HEADER: expected %d bytes, got %d bytes", 
+                        size, bytes.length
+                    )
+                );
+            }
+
+            int i = 0;
+            ulChannelMapCfg = bytes_to_uint32(bytes, i); i += 4;
+            usModuleSize = bytes_to_uint16(bytes, i); i += 2;
         }
     }
 
+    class ATOM_VRAM_MODULE
+    {
+
+    }
+
+    class ATOM_VRAM_MODULE_V7 extends ATOM_VRAM_MODULE
+    {
+        // size is sHeader.usModuleSize
+        public final int size;
+
+        ATOM_VRAM_MODULE_HEADER sHeader;
+        public int usPrivateReserved;
+        public int usEnableChannels;
+        public byte ucExtMemoryID;
+        public byte ucMemoryType;
+        public byte ucChannelNum;
+        public byte ucChannelWidth;
+        public byte ucDensity;
+        public byte ucReserve;            
+        public byte ucMisc;
+        public byte ucVREFI;
+        public byte ucNPL_RT;
+        public byte ucPreamble;
+        public byte ucMemorySize;
+        public int usSEQSettingOffset;
+        public byte ucReserved;
+        public int usEMRS2Value;
+        public int usEMRS3Value;
+        public byte ucMemoryVenderID;
+        public byte ucRefreshRateFactor;
+        public byte ucFIFODepth;
+        public byte ucCDR_Bandwidth;
+        public String strMemPNString;  // up to 20 bytes
+
+        public ATOM_VRAM_MODULE_V7(byte[] bytes)
+        {
+            int i = 0;
+            sHeader = new ATOM_VRAM_MODULE_HEADER(Arrays.copyOf(bytes, ATOM_VRAM_MODULE_HEADER.size)); 
+            size = sHeader.usModuleSize;
+            i += ATOM_VRAM_MODULE_HEADER.size;
+            usPrivateReserved = bytes_to_uint16(bytes, i); i += 2;
+            usEnableChannels = bytes_to_uint16(bytes, i); i += 2;
+            ucExtMemoryID = bytes[i++];
+            ucMemoryType = bytes[i++];
+            ucChannelNum = bytes[i++];
+            ucChannelWidth = bytes[i++];
+            ucDensity = bytes[i++];
+            ucReserve = bytes[i++];
+            ucMisc = bytes[i++];
+            ucVREFI = bytes[i++];
+            ucNPL_RT = bytes[i++];
+            ucPreamble = bytes[i++];
+            ucMemorySize = bytes[i++];
+            usSEQSettingOffset = bytes_to_uint16(bytes, i); i += 2;
+            ucReserved = bytes[i++];
+            usEMRS2Value = bytes_to_uint16(bytes, i); i += 2;
+            usEMRS3Value = bytes_to_uint16(bytes, i); i += 2;
+            ucMemoryVenderID = bytes[i++];
+            ucRefreshRateFactor = bytes[i++];
+            ucFIFODepth = bytes[i++];
+            ucCDR_Bandwidth = bytes[i++];
+            // read VRAM IC if there is one
+            int delta = sHeader.usModuleSize - i;
+            if(delta > 1) strMemPNString = new String(bytes, i, delta);
+        }
+    }
+
+    class ATOM_VRAM_MODULE_V8 extends ATOM_VRAM_MODULE
+    {
+        // size is sHeader.usModuleSize
+        public final int size;
+
+        public ATOM_VRAM_MODULE_HEADER sHeader;
+        public int usMcRamCfg;
+        public int usEnableChannels;
+        public byte ucExtMemoryID;
+        public byte ucMemoryType;
+        public byte ucChannelNum;
+        public byte ucChannelWidth;
+        public byte ucDensity;
+        public byte ucBankCol;
+        public byte ucMisc;
+        public byte ucVREFI;
+        public int usReserved;
+        public int usMemorySize;
+        public byte ucMcTunningSetId;
+        public byte ucRowNum;
+        public int usEMRS2Value;
+        public int usEMRS3Value;
+        public byte ucMemoryVendorID;
+        public byte ucRefreshRateFactor;
+        public byte ucFIFODepth;
+        public byte ucCDR_Bandwidth;
+        public long ulChannelMapCfg1;
+        public long ulBankMapCfg;
+        public long ulReserved;
+        public String strMemPNString;   // 12 bytes
+
+        public ATOM_VRAM_MODULE_V8(byte[] bytes) throws IllegalArgumentException
+        {
+            int i = 0;
+            sHeader = new ATOM_VRAM_MODULE_HEADER(Arrays.copyOf(bytes, ATOM_VRAM_MODULE_HEADER.size)); 
+            size = sHeader.usModuleSize;
+            i += ATOM_VRAM_MODULE_HEADER.size;
+            usMcRamCfg = bytes_to_uint16(bytes, i); i += 2;
+            usEnableChannels = bytes_to_uint16(bytes, i); i += 2;
+            ucExtMemoryID = bytes[i++];
+            ucMemoryType = bytes[i++];
+            ucChannelNum = bytes[i++];
+            ucChannelWidth = bytes[i++];
+            ucDensity = bytes[i++];
+            ucBankCol = bytes[i++];
+            ucMisc = bytes[i++];
+            ucVREFI = bytes[i++];
+            usReserved = bytes_to_uint16(bytes, i); i += 2;
+            usMemorySize = bytes_to_uint16(bytes, i); i += 2;
+            ucMcTunningSetId = bytes[i++];
+            ucRowNum = bytes[i++];
+            usEMRS2Value = bytes_to_uint16(bytes, i); i += 2;
+            usEMRS3Value = bytes_to_uint16(bytes, i); i += 2;
+            ucMemoryVendorID = bytes[i++];
+            ucRefreshRateFactor = bytes[i++];
+            ucFIFODepth = bytes[i++];
+            ucCDR_Bandwidth = bytes[i++];
+            ulChannelMapCfg1 = bytes_to_uint32(bytes, i); i += 4;
+            ulBankMapCfg = bytes_to_uint32(bytes, i); i += 4;
+            ulReserved = bytes_to_uint32(bytes, i); i += 4;
+            // read VRAM IC if there is one
+            int delta = sHeader.usModuleSize - i;
+            if(delta > 1) strMemPNString = new String(bytes, i, delta);
+        }
+    }
+
+    // don't think this is for pre-polaris BIOSes
     class ATOM_VRAM_ENTRY
     {
         public static final int size = 64;
@@ -462,7 +701,14 @@ public class TimingsEditor
         public ATOM_VRAM_ENTRY(byte[] bytes) throws IllegalArgumentException
         {
             if(bytes.length != size)
-                throw new IllegalArgumentException(String.format("ATOM_VRAM_ENTRY: expected %d bytes, got %d bytes", size, bytes.length));
+            {
+                throw new IllegalArgumentException(
+                    String.format(
+                        "ATOM_VRAM_ENTRY: expected %d bytes, got %d bytes", 
+                        size, bytes.length
+                    )
+                );
+            }
 
             int i = 0;
             ulChannelMapCfg = bytes_to_uint32(bytes, i); i += 4;
@@ -505,7 +751,14 @@ public class TimingsEditor
         public ATOM_VRAM_TIMING_ENTRY(byte[] bytes) throws IllegalArgumentException
         {
             if(bytes.length != size)
-                throw new IllegalArgumentException(String.format("ATOM_VRAM_TIMING_ENTRY: expected %d bytes, got %d bytes", size, bytes.length));
+            {
+                throw new IllegalArgumentException(
+                    String.format(
+                        "ATOM_VRAM_TIMING_ENTRY: expected %d bytes, got %d bytes", 
+                        size, bytes.length
+                    )
+                );
+            }
 
             ulClkRange = Byte.toUnsignedInt(bytes[2]) << 16 | 
                          Byte.toUnsignedInt(bytes[1]) << 8 | 
@@ -517,4 +770,6 @@ public class TimingsEditor
 
     private byte[] bios_bytes;
     private int VRAM_Timings_offset;
+    private ATOM_ROM_HEADER rom_header;
+    private ATOM_MASTER_DATA_TABLE master_data_table;
 }

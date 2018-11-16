@@ -181,12 +181,19 @@ public class TimingsEditorGUI extends JFrame
 	private void add_indices_panel()
 	{
 		panel_indices = new JPanel();
+		BoxLayout layout = new BoxLayout(panel_indices, BoxLayout.Y_AXIS);
+		panel_indices.setLayout(layout);
 
+		JPanel p = new JPanel();
 		JLabel lbl_indices = new JLabel("RAM IC Index: ");
-		panel_indices.add(lbl_indices);
-
+		p.add(lbl_indices);
 		cbox_indices = new JComboBox<>();
-		panel_indices.add(cbox_indices);
+		p.add(cbox_indices);
+		panel_indices.add(p);
+
+		p = new JPanel();
+		p.add(lbl_vram_ic);
+		panel_indices.add(p);
 
 		main_panel.add(panel_indices);
 	}
@@ -236,8 +243,33 @@ public class TimingsEditorGUI extends JFrame
 						pack();
 					}
 				});
+
+				// update RAM IC name
+				TimingsEditor.ATOM_VRAM_INFO vram_info = timings_editor.get_vram_info();
+				ArrayList<String> vram_ics = new ArrayList<>();
+				for(int i = 0; i < vram_info.sModules.length; i++)
+				{
+					switch(vram_info.ucVramModuleVer)
+					{
+					case 7:
+					{
+						TimingsEditor.ATOM_VRAM_MODULE_V7 m = (TimingsEditor.ATOM_VRAM_MODULE_V7)(vram_info.sModules[i]);
+						vram_ics.add(m.strMemPNString);
+						break;
+					}
+					case 8:
+					{
+						TimingsEditor.ATOM_VRAM_MODULE_V8 m = (TimingsEditor.ATOM_VRAM_MODULE_V8)(vram_info.sModules[i]);
+						vram_ics.add(m.strMemPNString);
+						break;
+					}
+					}
+				}
+				lbl_vram_ic.setText(vram_ics.get(selected));
 			}
 		});
+
+		cbox_indices.setSelectedIndex(0);
 	}
 
 	private void add_timings_panel(byte ram_ic_index)
@@ -350,4 +382,5 @@ public class TimingsEditorGUI extends JFrame
 	private ArrayList<TimingsEditor.ATOM_VRAM_TIMING_ENTRY> timings;
 	private JComboBox<String> cbox_indices = new JComboBox<>();
 	private JLabel lbl_file = new JLabel("No BIOS opened");
+	private JLabel lbl_vram_ic = new JLabel();
 }
