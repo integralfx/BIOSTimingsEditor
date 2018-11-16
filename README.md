@@ -1,13 +1,13 @@
 # BIOSTimingsEditor
 Java Swing GUI for editing AMD GPU VRAM timings
 
-![Screenshot](https://puu.sh/BXcdk/0c82072770.png)
+![Screenshot](https://raw.githubusercontent.com/integralfx/BIOSTimingsEditor/master/timings_editor.jpg)
 
 ## Purpose
 This program is made for pre-Polaris GPUs which didn't have a GUI for editing VRAM timings and would have to resort to using a hex editor.
 
 ## To-do
-* Identify VRAM IC names
+* Any suggestions would be welcome
 
 ## Credits
 * [caa82437 - PolarisBiosEditor](https://github.com/caa82437/PolarisBiosEditor)
