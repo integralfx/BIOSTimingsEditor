@@ -93,35 +93,41 @@ public class TimingsEditorGUI extends JFrame
 				{
 					if(fc.showOpenDialog(main_panel) == JFileChooser.APPROVE_OPTION)
 					{
-						File file = fc.getSelectedFile();
+						try {
+							File file = fc.getSelectedFile();
 
-						lbl_file.setText(file.getName());
+							timings_editor = new TimingsEditor(file.getAbsolutePath());
+							timings = timings_editor.get_timings();
 
-						timings_editor = new TimingsEditor(file.getAbsolutePath());
-						timings = timings_editor.get_timings();
+							lbl_file.setText(file.getName());
 
-						SwingUtilities.invokeLater(new Runnable()
-						{
-							@Override
-							public void run()
+							SwingUtilities.invokeLater(new Runnable()
 							{
-								if(panel_timings != null)
+								@Override
+								public void run()
 								{
-									main_panel.remove(panel_timings);
-									panel_timings = null;
+									if(panel_timings != null)
+									{
+										main_panel.remove(panel_timings);
+										panel_timings = null;
+									}
+
+									if(panel_indices == null)
+										add_indices_panel();
+									
+									add_timings_panel(timings.get(0).ucIndex);
+									revalidate();
+									repaint();
+									pack();
+
+									update_indices_cbox();
 								}
-
-								if(panel_indices == null)
-									add_indices_panel();
-								
-								add_timings_panel(timings.get(0).ucIndex);
-								revalidate();
-								repaint();
-								pack();
-
-								update_indices_cbox();
-							}
-						});
+							});
+						}
+						catch(IllegalArgumentException ex)
+						{
+							show_error_dialog(ex.getMessage());
+						}
 					}
 				}
 				else if(e.getSource() == menu_item_saveas)

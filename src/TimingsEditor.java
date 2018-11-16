@@ -28,18 +28,18 @@ public class TimingsEditor
             System.out.print(String.format("0x%02X ", b));
     }
 
-    public TimingsEditor(String bios_file)
+    public TimingsEditor(String bios_file) throws IllegalArgumentException
     {
         Path path = Paths.get(bios_file);
         try
         {
             bios_bytes = Files.readAllBytes(path);
             if(!init())
-                throw new Exception("invalid BIOS file");
+                throw new IllegalArgumentException("Invalid BIOS file");
         }
-        catch(Exception e)
+        catch(IOException e)
         {
-            System.err.println("exception caught: " + e.getMessage());
+            System.err.println("failed to read " + bios_file);
             e.printStackTrace();
         }
     }
