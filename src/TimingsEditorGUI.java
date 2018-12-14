@@ -198,7 +198,8 @@ public class TimingsEditorGUI extends JFrame
 		panel_indices.add(p);
 
 		p = new JPanel();
-		p.add(lbl_vram_ic);
+		txt_vram_ic.setEditable(false);
+		p.add(txt_vram_ic);
 		panel_indices.add(p);
 
 		main_panel.add(panel_indices);
@@ -271,7 +272,7 @@ public class TimingsEditorGUI extends JFrame
 					}
 					}
 				}
-				lbl_vram_ic.setText(vram_ics.get(selected));
+				txt_vram_ic.setText(vram_ics.get(selected));
 			}
 		});
 
@@ -388,5 +389,5 @@ public class TimingsEditorGUI extends JFrame
 	private ArrayList<TimingsEditor.ATOM_VRAM_TIMING_ENTRY> timings;
 	private JComboBox<String> cbox_indices = new JComboBox<>();
 	private JLabel lbl_file = new JLabel("No BIOS opened");
-	private JLabel lbl_vram_ic = new JLabel();
+	private JTextField txt_vram_ic = new JTextField();
 }
